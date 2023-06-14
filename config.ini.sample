@@ -1,0 +1,6 @@
+[server]
+server_port = 9660
+base_url = https://play.dhis2.org/dev/
+username = admin
+password = district
+

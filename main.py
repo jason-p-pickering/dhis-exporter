@@ -58,17 +58,29 @@ class JsonCollector(object):
 
     @staticmethod
     def collect_build_info(response):
-        metric = Metric('dhis_summary_build_info', 'Build information', 'gauge')
+        metric = Metric('dhis_sysinfo_build_info', 'Build information', 'gauge')
         #Convert the build time to seconds since the epoch
 
         try:
-            build_time = int(time.mktime(time.strptime(response['system']['buildTime'], "%Y-%m-%dT%H:%M:%S.%f")))
+            build_time = int(time.mktime(time.strptime(response['buildTime'], "%Y-%m-%dT%H:%M:%S.%f")))
         except ValueError:
             print("Error parsing build time")
             build_time = 0
 
-        metric.add_sample('dhis_summary_build_info', value=build_time, labels={'version': response['system']['version'], 'commit': response['system']['revision']})
+        metric.add_sample('dhis_sysinfo_build_info', value=build_time, labels={'version': response['version'], 'commit': response['revision']})
         return metric
+
+    @staticmethod
+    def collect_analytics_partition_runtime(response):
+        #lastAnalyticsTablePartitionRuntime : "00:00:42.260"
+        metric = Metric('dhis_summary_analytics_partition_runtime', 'Analytics partition runtime', 'gauge')
+        try:
+            runtime = response['lastAnalyticsTablePartitionRuntime']
+            hours, minutes, seconds = map(float, runtime.split(':'))
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            metric.add_sample('dhis_sysinfo_analytics_partition_runtime', value=total_seconds, labels={})
+        except ValueError:
+            print("Error parsing analytics partition runtime")
 
     @staticmethod
     def transform_count_to_metrics(summaries):
@@ -108,6 +120,13 @@ class JsonCollector(object):
             print("Error: " + str(e))
             return None
 
+    def fetch_system_info(self):
+        # GET /api/systemSettings
+        url = self._config['server']['base_url'] + 'api/info'
+        response = self.http.request('GET', url, headers=self.request_headers)
+        return json.loads(response.data.decode('utf-8'))
+
+
     def collect(self):
         #Metrics from the data summary
         response = self.fetch_data_summary()
@@ -115,7 +134,11 @@ class JsonCollector(object):
         yield self.collect_active_users(response)
         yield self.collect_data_values_count(response)
         yield self.collect_event_count(response)
-        yield self.collect_build_info(response)
+        #Get the system settings
+        sys_info = self.fetch_system_info()
+        yield self.collect_build_info(sys_info)
+        yield self.collect_analytics_partition_runtime(sys_info)
+        #Metrics from the data integrity checks
         di_checks = self.fetch_metadata_integrity_checks()
         if di_checks:
             yield self.transform_count_to_metrics(di_checks)

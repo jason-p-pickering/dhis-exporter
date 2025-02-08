@@ -40,6 +40,7 @@ class JsonCollector(object):
         metric = Metric('dhis_summary_active_users_count_total', 'Active users', 'gauge')
         for k, v in response['activeUsers'].items():
             metric.add_sample('dhis_summary_active_users_count_total', value=v, labels={'days': k})
+        print(f"Collected active users metric: {metric}")
         return metric
 
     @staticmethod
@@ -59,20 +60,15 @@ class JsonCollector(object):
     @staticmethod
     def collect_build_info(response):
         metric = Metric('dhis_sysinfo_build_info', 'Build information', 'gauge')
-        #Convert the build time to seconds since the epoch
-
-        try:
-            build_time = int(time.mktime(time.strptime(response['buildTime'], "%Y-%m-%dT%H:%M:%S.%f")))
-        except ValueError:
-            print("Error parsing build time")
-            build_time = 0
-
-        metric.add_sample('dhis_sysinfo_build_info', value=build_time, labels={'version': response['version'], 'commit': response['revision']})
+        build_time = int(time.mktime(time.strptime(response['buildTime'], "%Y-%m-%dT%H:%M:%S.%f")))
+        metric.add_sample('dhis_sysinfo_build_info', value=build_time,
+                          labels={'version': response['version'], 'commit': response['revision']})
+        print(f"Collected build info metric: {metric}")
         return metric
 
     @staticmethod
     def collect_analytics_partition_runtime(response):
-        #lastAnalyticsTablePartitionRuntime : "00:00:42.260"
+        # lastAnalyticsTablePartitionRuntime : "00:00:42.260"
         metric = Metric('dhis_summary_analytics_partition_runtime', 'Analytics partition runtime', 'gauge')
         try:
             runtime = response['lastAnalyticsTablePartitionRuntime']
@@ -81,6 +77,18 @@ class JsonCollector(object):
             metric.add_sample('dhis_sysinfo_analytics_partition_runtime', value=total_seconds, labels={})
         except ValueError:
             print("Error parsing analytics partition runtime")
+        return metric
+
+    @staticmethod
+    def collect_analytics_table_runtime(response):
+        metric = Metric('dhis_summary_analytics_table_runtime', 'Analytics table runtime', 'gauge')
+        try:
+            runtime = response['lastAnalyticsTableRuntime']
+            hours, minutes, seconds = map(float, runtime.split(':'))
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            metric.add_sample('dhis_sysinfo_analytics_table_runtime', value=total_seconds, labels={})
+        except ValueError:
+            print("Error parsing analytics table runtime")
 
     @staticmethod
     def transform_count_to_metrics(summaries):
@@ -122,7 +130,7 @@ class JsonCollector(object):
 
     def fetch_system_info(self):
         # GET /api/systemSettings
-        url = self._config['server']['base_url'] + 'api/info'
+        url = self._config['server']['base_url'] + 'api/system/info'
         response = self.http.request('GET', url, headers=self.request_headers)
         return json.loads(response.data.decode('utf-8'))
 
@@ -136,8 +144,10 @@ class JsonCollector(object):
         yield self.collect_event_count(response)
         #Get the system settings
         sys_info = self.fetch_system_info()
+        print(sys_info)
         yield self.collect_build_info(sys_info)
         yield self.collect_analytics_partition_runtime(sys_info)
+        yield self.collect_analytics_table_runtime(sys_info)
         #Metrics from the data integrity checks
         di_checks = self.fetch_metadata_integrity_checks()
         if di_checks:

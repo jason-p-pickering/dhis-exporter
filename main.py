@@ -89,6 +89,7 @@ class JsonCollector(object):
             metric.add_sample('dhis_sysinfo_analytics_table_runtime', value=total_seconds, labels={})
         except ValueError:
             print("Error parsing analytics table runtime")
+        return metric
 
     @staticmethod
     def transform_count_to_metrics(summaries):
